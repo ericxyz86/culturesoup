@@ -177,7 +177,7 @@ async function scanTwitter(): Promise<RawPost[]> {
             );
             if (!res.ok) return [];
             const html = await res.text();
-            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
             if (!match) return [];
             const data = JSON.parse(match[1]);
             const entries = data?.props?.pageProps?.timeline?.entries || [];
