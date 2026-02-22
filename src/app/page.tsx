@@ -1,23 +1,46 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { StatsBar } from "@/components/stats-bar";
 import { TrendCard } from "@/components/trend-card";
-import { MOCK_TRENDS, MOCK_POSTS } from "@/lib/mock-data";
 import { FireIcon, RefreshIcon } from "@/components/icons";
 import { TrendingTopic, Stats } from "@/lib/types";
 
-const TWENTY_FOUR_HOURS = 48 * 60 * 60 * 1000;
+const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 export default function DashboardPage() {
-  const [trends, setTrends] = useState<TrendingTopic[]>(MOCK_TRENDS);
+  const [trends, setTrends] = useState<TrendingTopic[]>([]);
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState<string | null>(null);
   const [sources, setSources] = useState<string[]>([]);
   const [rawCount, setRawCount] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load cached scan on mount
+  useEffect(() => {
+    async function loadCached() {
+      try {
+        const res = await fetch("/api/scan/latest");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.trends?.length) {
+            setTrends(data.trends);
+            setSources(data.sources || []);
+            setRawCount(data.rawCount || 0);
+            setLastScan(data.scannedAt ? new Date(data.scannedAt).toLocaleTimeString() : null);
+          }
+        }
+      } catch {
+        // No cached data — user needs to scan
+      } finally {
+        setLoaded(true);
+      }
+    }
+    loadCached();
+  }, []);
 
   const filteredTrends = useMemo(() => {
-    const cutoff = Date.now() - TWENTY_FOUR_HOURS;
+    const cutoff = Date.now() - MAX_AGE_MS;
     return trends
       .filter((t) => t.discoveredAt && new Date(t.discoveredAt).getTime() > cutoff)
       .sort((a, b) => new Date(b.discoveredAt).getTime() - new Date(a.discoveredAt).getTime());
@@ -43,9 +66,9 @@ export default function DashboardPage() {
 
   const stats: Stats = {
     topicsFound: filteredTrends.length,
-    platformsScanned: sources.length || 4,
+    platformsScanned: sources.length || 0,
     peakEngagement: filteredTrends[0]?.engagement || "\u2014",
-    publishedCount: MOCK_POSTS.filter((p) => p.status === "published").length,
+    publishedCount: 0,
   };
 
   return (
@@ -53,7 +76,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-white flex items-center gap-2">
           <FireIcon className="w-6 h-6 text-[#ff6b35]" />
-          CultureSoup <span className="text-[#ff6b35]">v0.4</span>
+          CultureSoup <span className="text-[#ff6b35]">v0.5</span>
         </h1>
         <button
           onClick={handleScan}
@@ -65,12 +88,12 @@ export default function DashboardPage() {
         </button>
       </div>
       <p className="text-[#888] text-sm mb-1">
-        Last 48 hours \u00B7 {filteredTrends.length} hot AI trends \u00B7{" "}
+        Last 48 hours · {filteredTrends.length} trending AI posts ·{" "}
         {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} | Powered by Agile Intelligence
       </p>
       {lastScan && (
         <p className="text-[#555] text-xs mb-1">
-          Last scan: {lastScan} \u00B7 {rawCount} posts scanned across {sources.join(", ")}
+          Last scan: {lastScan} · {rawCount} posts scanned across {sources.join(", ")}
         </p>
       )}
       <div className="mb-8" />
@@ -86,13 +109,24 @@ export default function DashboardPage() {
           {filteredTrends.map((trend) => (
             <TrendCard key={trend.id} trend={trend} />
           ))}
-          {filteredTrends.length === 0 && !scanning && (
-            <p className="text-[#666] text-sm py-8 text-center">No trends in the last 24 hours. Hit Scan Now to refresh.</p>
+
+          {loaded && filteredTrends.length === 0 && !scanning && (
+            <div className="text-center py-12">
+              <p className="text-[#666] text-sm mb-3">No scan results yet.</p>
+              <button
+                onClick={handleScan}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-[#ff6b35] text-white hover:bg-[#e55a25] transition-colors"
+              >
+                Run your first scan
+              </button>
+            </div>
           )}
+
           {scanning && (
             <div className="text-center py-12">
               <div className="inline-block w-8 h-8 border-2 border-[#ff6b35] border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-[#888] text-sm">Scanning Reddit, Hacker News, YouTube, TikTok...</p>
+              <p className="text-[#888] text-sm">Scanning Reddit, X/Twitter, TikTok, YouTube, Hacker News...</p>
+              <p className="text-[#555] text-xs mt-1">This takes 15-30 seconds</p>
             </div>
           )}
         </div>
