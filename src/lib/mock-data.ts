@@ -1,82 +1,82 @@
 import { TrendingTopic, GeneratedPost } from "./types";
 
+// Helper: hours ago from now
+function hoursAgo(h: number): string {
+  return new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+}
+
 export const MOCK_TRENDS: TrendingTopic[] = [
   {
     id: "trend-1",
-    platform: "X/Twitter",
-    platformDetail: "17M+ views",
-    title: 'Elon Musk\'s viral AI post: "Robots could make everyone richer than today\'s richest"',
-    url: "https://www.moneycontrol.com/technology/elon-musk-s-viral-ai-post-predicts-robots-could-make-everyone-richer-than-the-world-s-article-13836781.html",
-    meta: "2 days ago - Reshared with 17M+ views, thousands of reposts",
-    engagement: "17M+",
+    platform: "Entertainment / Legal",
+    platformDetail: "Breaking",
+    title: "Hollywood studios threaten ByteDance with litigation over Seedance 2.0 deepfakes",
+    url: "https://variety.com/2026/tv/news/netflix-bytedance-immediate-litigation-seedance-ai-1236666084/",
+    meta: "",
+    engagement: "Breaking",
     whyTrending:
-      "Musk reshared his AI-utopia prediction at peak attention. Polarizing take on AI economics driving massive engagement — people either love or hate it.",
+      "Netflix, Disney, Paramount all firing cease-and-desist letters. ByteDance scrambling to add safeguards. First major legal showdown over AI video gen using celebrity likenesses without consent.",
+    discoveredAt: hoursAgo(6),
   },
   {
     id: "trend-2",
-    platform: "CNN / Global Media",
-    platformDetail: "Breaking",
-    title: 'Seedance 2.0: China\'s AI video gen "so good it spooked Hollywood"',
-    url: "https://www.cnn.com/2026/02/20/china/china-ai-seedance-intl-hnk-dst",
-    meta: "2 days ago - CNN, BBC, Reuters all covering",
-    engagement: "Breaking",
+    platform: "X/Twitter + LinkedIn",
+    platformDetail: "Sentiment",
+    title: '"84% of devs use AI, only 29% trust it" — the AI trust gap is widening',
+    url: "https://siliconangle.com/2026/02/21/ai-trust-gap-developers-grapple-issues-around-security-memory-cost-interoperability/",
+    meta: "",
+    engagement: "Viral",
     whyTrending:
-      "Deepfake-level video gen showing Tom Cruise, Brad Pitt, Trump in AI-generated scenes. Hollywood is terrified. China AI arms race narrative exploding.",
+      "New survey showing massive disconnect between AI adoption and AI trust. Counter-narrative to hype gaining serious traction — developers themselves don't trust what they're building with.",
+    discoveredAt: hoursAgo(3),
   },
   {
     id: "trend-3",
-    platform: "X/Twitter + LinkedIn",
+    platform: "X/Twitter + Reddit",
     platformDetail: "India AI Summit",
-    title: "Awkward onstage moment: Sam Altman vs Dario Amodei at India AI Summit",
-    url: "https://www.pcmag.com/news/u-mad-onstage-snub-between-openai-and-anthropic-ceos-has-a-backstory",
-    meta: '2 days ago - The "U Mad?" moment going viral',
+    title: "Indian university kicked out of AI Summit for passing off Chinese robot dog as their own",
+    url: "https://www.reuters.com/world/china/india-tells-university-leave-ai-summit-after-presenting-chinese-robot-its-own-2026-02-18/",
+    meta: "",
     engagement: "Viral",
     whyTrending:
-      'OpenAI vs Anthropic CEO beef caught on camera at India AI Summit. Modi tried to broker a handshake — it got awkward. AI Twitter is having a field day.',
+      "Galgotias University professor claimed a commercially available Chinese robot dog was developed at their lab — caught on state TV. Kicked out of India AI Summit. Peak meme fuel.",
+    discoveredAt: hoursAgo(2),
   },
   {
     id: "trend-4",
-    platform: "CNBC / Financial Media",
-    platformDetail: "$210B+",
-    title: "India AI Summit: $210B+ in AI infrastructure commitments",
-    url: "https://www.cnbc.com/2026/02/21/india-ai-summit-tech-giants-billion-dollar-investments.html",
-    meta: "1 day ago - Reliance $110B, Adani $100B, OpenAI + Tata partnership",
-    engagement: "$210B+",
+    platform: "X/Twitter",
+    platformDetail: "Controversy",
+    title: "Grok falsely flags real Kamal Haasan movie promo as AI-generated",
+    url: "https://www.hindustantimes.com/entertainment/tamil-cinema/is-kamal-haasan-rajinikanth-reunion-promo-ai-generated-grok-indictment-has-fans-up-in-arms-nelson-kh-x-rk-reunion-101771736101655.html",
+    meta: "",
+    engagement: "High",
     whyTrending:
-      "India positioning as the next AI superpower. Biggest single-event AI investment announcement ever. Finance Twitter + geopolitics = engagement magnet.",
+      "Elon's own AI chatbot Grok told users a real movie promo starring Kamal Haasan and Rajinikanth was AI-generated. Fans furious. The AI detection arms race is eating itself.",
+    discoveredAt: hoursAgo(3),
   },
   {
     id: "trend-5",
-    platform: "Science / Medical AI",
+    platform: "Science / Tech",
     platformDetail: "Research",
-    title: "AI reads brain MRI scans in seconds — identifies neurological conditions instantly",
-    url: "https://www.sciencedaily.com/news/computers_math/artificial_intelligence/",
-    meta: "Today - University of Michigan research",
+    title: "Brain-inspired neuromorphic chips now solve complex physics without supercomputers",
+    url: "https://www.sciencedaily.com/releases/2026/02/260213223923.htm",
+    meta: "",
     engagement: "High",
     whyTrending:
-      '"AI saving lives" content consistently outperforms doom content. Brain scan → instant diagnosis is visceral and shareable.',
+      "Neuromorphic computing breakthrough — brain-like chips solving PDEs that normally need massive GPU clusters. 'Post-NVIDIA' narrative gaining traction in AI hardware circles.",
+    discoveredAt: hoursAgo(16),
   },
   {
     id: "trend-6",
-    platform: "X/Twitter + Substack",
-    platformDetail: "Think Pieces",
-    title: '"Something Big Is Happening" — viral AI hype essay sparks backlash',
-    url: "https://www.infinitescroll.us/p/ai-hype-and-the-search-for-meaning",
-    meta: "4 days ago - Counter-narrative going viral",
-    engagement: "High",
+    platform: "The Atlantic + Substack",
+    platformDetail: "Contrarian",
+    title: '"The AI-Panic Cycle" — sustained backlash against AI hype is going mainstream',
+    url: "https://www.theatlantic.com/podcasts/2026/02/the-ai-panic-cycle-and-whats-actually-different-now/686077/",
+    meta: "",
+    engagement: "Growing",
     whyTrending:
-      "The AI hype vs reality debate is the engagement meta right now. Every hot take spawns a counter-take.",
-  },
-  {
-    id: "trend-7",
-    platform: "Industry / Enterprise AI",
-    platformDetail: "Survey Data",
-    title: "38% of companies will deploy AI agents in 2026 — the year of agentic AI",
-    url: "https://radicaldatascience.wordpress.com/2026/02/20/ai-news-briefs-bulletin-board-for-february-2026/",
-    meta: "1 day ago - Enterprise survey data",
-    engagement: "High",
-    whyTrending:
-      '"Agentic AI" is the buzzword of 2026. LinkedIn engagement through the roof on this data point.',
+      "The Atlantic, Blood in the Machine, and The Free Press all running anti-hype pieces this week. Counter-narrative content consistently outperforms pure AI optimism right now.",
+    discoveredAt: hoursAgo(18),
   },
 ];
 
@@ -84,93 +84,91 @@ export const MOCK_POSTS: GeneratedPost[] = [
   {
     id: "post-1",
     platform: "twitter",
-    content: `China's Seedance 2.0 is generating AI video so realistic that Hollywood is genuinely spooked.
+    content: `Netflix just threatened ByteDance with \"immediate litigation\" over Seedance 2.0.
 
-We're past the "AI art looks weird" phase. We're in the "wait, that's not a real movie?" phase.
+Disney and Paramount already sent cease-and-desists.
 
-The creative industry isn't being disrupted — it's being redefined.
+AI-generated Tom Cruise and Brad Pitt in promotional demos without consent crossed the line.
 
-#AI #Seedance #GenerativeAI`,
-    trendingTopic: "Seedance 2.0",
-    estimatedEngagement: "High",
+This is the case that defines AI copyright law for a generation.
+
+#AI #Seedance #Copyright #Hollywood`,
+    trendingTopic: "Hollywood vs Seedance 2.0",
+    estimatedEngagement: "Very High",
     status: "draft",
   },
   {
     id: "post-2",
     platform: "twitter",
-    content: `India just committed $210 BILLION to AI infrastructure in a single summit.
+    content: `Grok just told users a real movie trailer was \"AI-generated.\"
 
-Reliance: $110B
-Adani: $100B
-OpenAI + Tata: First DC customer deal
+The movie stars Kamal Haasan and Rajinikanth — two of India's biggest actors. Fans are livid.
 
-The AI superpower race isn't just US vs China anymore.
+We've entered the era where AI detection is as unreliable as the AI it's trying to catch.
 
-#IndiaAI #ArtificialIntelligence`,
-    trendingTopic: "India AI Summit",
+The ouroboros is complete.`,
+    trendingTopic: "Grok false accusation",
     estimatedEngagement: "High",
     status: "draft",
   },
   {
     id: "post-3",
-    platform: "twitter",
-    content: `AI just learned to read brain MRI scans in seconds.
-
-Not "assist doctors" — actually identify neurological conditions instantly.
-
-This is the AI story that matters more than any chatbot war.
-
-#MedicalAI #HealthTech`,
-    trendingTopic: "Medical AI",
-    estimatedEngagement: "High (feel-good + shareable)",
-    status: "draft",
-  },
-  {
-    id: "post-4",
     platform: "linkedin",
-    content: `38% of companies that haven't deployed AI agents yet say they'll start in 2026.
+    content: `New data: 84% of developers now use AI tools.
 
-We're building exactly this at Agile Intelligence — AI agents that listen to social media, analyze trends, generate reports, and act on insights. No prompting required.
+Only 29% trust the accuracy of what they produce.
 
-The shift from "AI as a tool" to "AI as a teammate" is happening faster than anyone expected.
+This trust gap is the single biggest risk to AI adoption — and most companies aren't even measuring it.
 
-What's your company's agent strategy?
+If your AI strategy doesn't include a trust strategy, you don't have a strategy.
 
-#AgenticAI #DataAnalytics #MarTech #AIAgents`,
-    trendingTopic: "Agentic AI",
+#AI #TrustGap #Leadership #AIStrategy`,
+    trendingTopic: "AI Trust Gap",
     estimatedEngagement: "High",
     status: "draft",
   },
   {
+    id: "post-4",
+    platform: "twitter",
+    content: `A university professor got caught passing off a Chinese-made robot dog as her own creation at India's AI Summit.
+
+On state TV.
+
+She was kicked out.
+
+In 2026. At an AI summit. We're speedrunning the credibility crisis.`,
+    trendingTopic: "Fake AI robot dog",
+    estimatedEngagement: "Very High (meme potential)",
+    status: "draft",
+  },
+  {
     id: "post-5",
-    platform: "instagram",
-    content: `Sam Altman and Dario Amodei
+    platform: "twitter",
+    content: `Neuromorphic chips just solved complex physics simulations without a supercomputer.
 
-Just kidding. The OpenAI vs Anthropic CEO "handshake" at India's AI Summit was peak awkward.
+Brain-inspired computing isn't a research curiosity anymore — it's a real alternative to GPU-everything.
 
-When your competition is also your ex-colleague... things get weird on stage.
+The post-NVIDIA era might arrive sooner than anyone expected.
 
-The AI race isn't just about models anymore — it's about geopolitics, partnerships, and apparently, personal beef.
-
-#AI #OpenAI #Anthropic #TechDrama #IndiaAISummit`,
-    trendingTopic: "Altman vs Amodei",
-    estimatedEngagement: "Very high (drama + meme)",
+#Neuromorphic #AIHardware #Computing`,
+    trendingTopic: "Neuromorphic computing",
+    estimatedEngagement: "High",
     status: "draft",
   },
   {
     id: "post-6",
-    platform: "twitter",
-    content: `The current AI discourse meta:
+    platform: "instagram",
+    content: `The AI backlash went mainstream this week.
 
-"AI will change everything!" → 17M views
-"Actually, slow down" → Goes viral as counter-narrative
-"Here's what AI ACTUALLY does today" → Crickets
+The Atlantic, Blood in the Machine, and The Free Press all running pieces questioning the hype.
 
-We don't reward nuance. We reward takes.
+The most viral AI content right now isn't optimism — it's skepticism.
 
-Maybe that's the real AI problem.`,
-    trendingTopic: "AI hype backlash",
-    estimatedEngagement: "High (meta-commentary)",
+Maybe the real disruption is the trust we lost along the way.
+
+#AI #TechBacklash #HotTake`,
+    trendingTopic: "AI backlash",
+    estimatedEngagement: "High (contrarian)",
     status: "draft",
   },
 ];

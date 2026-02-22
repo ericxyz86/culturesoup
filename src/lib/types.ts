@@ -7,6 +7,7 @@ export interface TrendingTopic {
   meta: string;
   engagement: string;
   whyTrending: string;
+  discoveredAt: string; // ISO timestamp
 }
 
 export type Platform = "twitter" | "instagram" | "linkedin";

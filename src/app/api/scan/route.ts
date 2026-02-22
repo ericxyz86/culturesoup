@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
-import { MOCK_TRENDS } from "@/lib/mock-data";
+import { scanAllPlatforms } from "@/lib/scanner";
 
-// v1: Returns mock trending topics
-// Future: Will trigger real web search + Reddit + news scanning
+export const maxDuration = 30; // allow up to 30s for all platforms
+
 export async function POST() {
-  return NextResponse.json({
-    trends: MOCK_TRENDS,
-    scannedAt: new Date().toISOString(),
-    sources: ["X/Twitter", "Reddit", "CNN", "CNBC", "Reuters", "PCMag", "ScienceDaily"],
-  });
+  try {
+    const result = await scanAllPlatforms();
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("Scan failed:", error);
+    return NextResponse.json(
+      { error: "Scan failed", message: String(error) },
+      { status: 500 }
+    );
+  }
 }
