@@ -90,26 +90,33 @@ async function fetchSociaVault(path: string, params: Record<string, string> = {}
 
 // ── Twitter/X via SociaVault (100 most popular tweets per user) ──
 const TWITTER_ACCOUNTS = [
-  // AI companies
+  // AI companies & labs
   "OpenAI", "AnthropicAI", "GoogleDeepMind", "MistralAI", "MetaAI",
-  "CohereAI", "stability_ai", "HuggingFace", "xaborai",
-  // AI leaders
+  "CohereAI", "stability_ai", "HuggingFace", "xaborai", "AIatMeta",
+  "DeepSeek_AI", "PerplexityAI", "CursorAI",
+  // AI leaders & researchers
   "sama", "DarioAmodei", "elonmusk", "satyanadella",
   "karpathy", "ylecun", "fchollet", "drjimfan",
+  "emollick", "GaryMarcus", "jeffdean", "mmaborai",
+  "hardmaru", "Miles_Brundage", "jackclark",
   // AI media / commentators
   "TheAIGRID", "AiBreakfast", "ai__pub", "bindureddy",
   "techreview", "emaborai", "ABORAI",
   // Tech journalists / influencers who cover AI
   "rowancheung", "billofalltrades", "maborai", "nonmayorpete",
   "tsaborai", "minchoi", "aaborai",
+  "benedictevans", "kevinroose", "karaswisher",
+  "ID_AA_Carmack", "naval",
 ];
 
 // AI-native accounts: skip AI keyword check (everything they post is AI)
 const ALWAYS_AI_ACCOUNTS = new Set([
   "OpenAI", "AnthropicAI", "GoogleDeepMind", "MistralAI", "MetaAI",
-  "CohereAI", "stability_ai", "HuggingFace", "xaborai",
+  "CohereAI", "stability_ai", "HuggingFace", "xaborai", "AIatMeta",
+  "DeepSeek_AI", "PerplexityAI", "CursorAI",
   "karpathy", "AiBreakfast", "TheAIGRID", "ai__pub",
-  "drjimfan", "AIatMeta", "rowancheung",
+  "drjimfan", "rowancheung", "emollick", "GaryMarcus",
+  "hardmaru", "Miles_Brundage", "jackclark",
 ]);
 
 async function scanTwitter(): Promise<RawPost[]> {
@@ -348,7 +355,13 @@ async function scanReddit(): Promise<RawPost[]> {
   const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
   // Part 1: Hot posts from AI-specific subreddits
-  const aiSubreddits = ["artificial", "MachineLearning", "singularity", "ChatGPT", "OpenAI", "LocalLLaMA", "StableDiffusion", "ClaudeAI"];
+  const aiSubreddits = [
+    // Core AI subs
+    "artificial", "MachineLearning", "singularity", "ChatGPT", "OpenAI",
+    "LocalLLaMA", "StableDiffusion", "ClaudeAI", "ArtificialInteligence",
+    // Adjacent tech subs that frequently surface AI content
+    "technology", "Futurology", "programming", "datascience", "compsci",
+  ];
   for (const sub of aiSubreddits) {
     try {
       const res = await fetch(
@@ -381,37 +394,44 @@ async function scanReddit(): Promise<RawPost[]> {
     }
   }
 
-  // Part 2: Global search
-  try {
-    const res = await fetch(
-      `https://www.reddit.com/search.json?q=chatgpt+OR+openai+OR+%22artificial+intelligence%22+OR+deepfake&sort=top&t=day&limit=25&raw_json=1`,
-      { headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(8000) }
-    );
-    if (res.ok) {
-      const data = await res.json();
-      for (const child of data?.data?.children || []) {
-        const p = child?.data;
-        if (!p?.title || p.stickied) continue;
-        if (!isEnglish(p.title)) continue;
-        if (!AI_KEYWORDS.test(p.title + " " + (p.selftext || "").slice(0, 200))) continue;
-        const hrs = hoursAgo(p.created_utc);
-        if (hrs > MAX_AGE_HOURS) continue;
-        const score = (p.score || 0) + (p.num_comments || 0) * 2;
-        posts.push({
-          title: p.title,
-          url: `https://www.reddit.com${p.permalink}`,
-          platform: "Reddit",
-          platformDetail: `r/${p.subreddit} · ${formatEngagement(p.score || 0)} pts`,
-          engagement: score,
-          engagementLabel: `${formatEngagement(p.score || 0)} pts · ${p.num_comments || 0} comments`,
-          hoursOld: hrs,
-          velocity: score / hrs,
-          discoveredAt: new Date(p.created_utc * 1000).toISOString(),
-        });
+  // Part 2: Global search — multiple query sets to cast a wider net
+  const searchQueries = [
+    "chatgpt+OR+openai+OR+%22artificial+intelligence%22+OR+deepfake",
+    "%22AI+regulation%22+OR+%22AI+safety%22+OR+%22AI+job%22+OR+%22AI+replace%22",
+    "LLM+OR+GPT+OR+Claude+OR+Gemini+OR+Llama+OR+Mistral",
+  ];
+  for (const q of searchQueries) {
+    try {
+      const res = await fetch(
+        `https://www.reddit.com/search.json?q=${q}&sort=top&t=day&limit=25&raw_json=1`,
+        { headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(8000) }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        for (const child of data?.data?.children || []) {
+          const p = child?.data;
+          if (!p?.title || p.stickied) continue;
+          if (!isEnglish(p.title)) continue;
+          if (!AI_KEYWORDS.test(p.title + " " + (p.selftext || "").slice(0, 200))) continue;
+          const hrs = hoursAgo(p.created_utc);
+          if (hrs > MAX_AGE_HOURS) continue;
+          const score = (p.score || 0) + (p.num_comments || 0) * 2;
+          posts.push({
+            title: p.title,
+            url: `https://www.reddit.com${p.permalink}`,
+            platform: "Reddit",
+            platformDetail: `r/${p.subreddit} · ${formatEngagement(p.score || 0)} pts`,
+            engagement: score,
+            engagementLabel: `${formatEngagement(p.score || 0)} pts · ${p.num_comments || 0} comments`,
+            hoursOld: hrs,
+            velocity: score / hrs,
+            discoveredAt: new Date(p.created_utc * 1000).toISOString(),
+          });
+        }
       }
+    } catch (e) {
+      console.error("Reddit global search failed:", e);
     }
-  } catch (e) {
-    console.error("Reddit global search failed:", e);
   }
 
   console.log(`[Scanner] Reddit: ${posts.length} posts from ${aiSubreddits.length} subs + global search`);
@@ -472,7 +492,10 @@ async function scanYouTube(): Promise<RawPost[]> {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return [];
   const posts: RawPost[] = [];
-  const queries = ["AI news today", "artificial intelligence", "chatgpt openai claude"];
+  const queries = [
+    "AI news today", "artificial intelligence", "chatgpt openai claude",
+    "AI explained 2026", "machine learning tutorial", "GPT Claude Gemini review",
+  ];
 
   for (const q of queries) {
     try {
@@ -540,6 +563,18 @@ export async function scanAllPlatforms(): Promise<{
 
   const all = [...twitter, ...tiktok, ...reddit, ...hn, ...youtube];
   console.log(`[Scanner] Total raw: ${all.length} (Twitter:${twitter.length} TikTok:${tiktok.length} Reddit:${reddit.length} HN:${hn.length} YT:${youtube.length})`);
+
+  // Cross-platform velocity normalization — prevent any single platform from dominating
+  const platformScales: Record<string, number> = {
+    "X/Twitter": 1.0,    // baseline
+    "Reddit": 0.8,       // upvote cascades inflate scores fast
+    "YouTube": 0.3,      // even normalized YT gets high absolute numbers
+    "Hacker News": 1.5,  // HN scores modest but high-signal
+    "TikTok": 0.4,       // TikTok engagement numbers are huge
+  };
+  for (const post of all) {
+    post.velocity *= platformScales[post.platform] || 1.0;
+  }
 
   // Dedupe by normalized title
   const seen = new Map<string, RawPost>();
