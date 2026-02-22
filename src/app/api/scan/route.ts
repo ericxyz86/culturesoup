@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { scanAllPlatforms } from "@/lib/scanner";
+import { setCachedScan } from "@/lib/scan-cache";
 
-export const maxDuration = 30; // allow up to 30s for all platforms
+export const maxDuration = 30;
 
 export async function POST() {
   try {
     const result = await scanAllPlatforms();
+    setCachedScan(result);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Scan failed:", error);
