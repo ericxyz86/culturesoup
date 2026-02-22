@@ -27,12 +27,27 @@ const AI_KEYWORDS = /\b(ai|artificial intelligence|machine learning|llm|gpt|clau
 
 function isEnglish(text: string): boolean {
   if (!text) return false;
+
+  // Reject if contains ANY Devanagari, Arabic, CJK, Thai, Korean, Cyrillic blocks
+  if (/[\u0900-\u097F]/.test(text)) return false; // Hindi/Devanagari
+  if (/[\u0600-\u06FF]/.test(text)) return false; // Arabic
+  if (/[\u4E00-\u9FFF]/.test(text)) return false; // CJK (Chinese)
+  if (/[\u3040-\u30FF]/.test(text)) return false; // Japanese Hiragana/Katakana
+  if (/[\uAC00-\uD7AF]/.test(text)) return false; // Korean Hangul
+  if (/[\u0E00-\u0E7F]/.test(text)) return false; // Thai
+  if (/[\u0400-\u04FF]/.test(text)) return false; // Cyrillic (Russian etc.)
+  if (/[\u0980-\u09FF]/.test(text)) return false; // Bengali
+  if (/[\u0B80-\u0BFF]/.test(text)) return false; // Tamil
+
+  // Check non-ASCII ratio (catches Turkish ç/ş/ğ/ü heavy text, accented languages)
   const nonAsciiLetters = text.replace(/[\x00-\x7F\s\d]/g, "").length;
   const allLetters = text.replace(/[\s\d\p{P}]/gu, "").length;
   if (allLetters === 0) return false;
-  if (nonAsciiLetters / allLetters > 0.3) return false;
+  if (nonAsciiLetters / allLetters > 0.15) return false; // Stricter: 15% (was 30%)
+
+  // Must have enough actual English words
   const asciiWords = text.match(/[a-zA-Z]{2,}/g) || [];
-  return asciiWords.length >= 3;
+  return asciiWords.length >= 4; // Stricter: 4 words (was 3)
 }
 
 const MAX_AGE_HOURS = 48;
@@ -462,7 +477,7 @@ async function scanYouTube(): Promise<RawPost[]> {
   for (const q of queries) {
     try {
       const publishedAfter = new Date(Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000).toISOString();
-      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&order=viewCount&publishedAfter=${publishedAfter}&relevanceLanguage=en&regionCode=US&maxResults=10&key=${apiKey}`;
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&order=viewCount&publishedAfter=${publishedAfter}&relevanceLanguage=en&regionCode=US&videoCaption=closedCaption&maxResults=10&key=${apiKey}`;
       const res = await fetch(searchUrl, { cache: "no-store", signal: AbortSignal.timeout(10000) });
       if (!res.ok) continue;
       const data = await res.json();
@@ -475,13 +490,18 @@ async function scanYouTube(): Promise<RawPost[]> {
       for (const v of statsData.items || []) {
         const title = v.snippet?.title || "";
         if (!isEnglish(title)) continue;
+        // Extra: reject if YouTube reports a non-English language
+        const lang = v.snippet?.defaultLanguage || v.snippet?.defaultAudioLanguage || "";
+        if (lang && !lang.startsWith("en")) continue;
         const views = parseInt(v.statistics?.viewCount || "0");
         const likes = parseInt(v.statistics?.likeCount || "0");
         const comments = parseInt(v.statistics?.commentCount || "0");
         const published = v.snippet?.publishedAt;
         const hrs = hoursAgo(published);
         if (hrs > MAX_AGE_HOURS) continue;
-        const score = views + likes * 10 + comments * 20;
+        // Normalize: use likes + comments as primary signal (not views)
+        // Views inflate YouTube scores far beyond other platforms
+        const score = likes + comments * 5;
         posts.push({
           title,
           url: `https://www.youtube.com/watch?v=${v.id}`,
