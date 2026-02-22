@@ -7,7 +7,7 @@ import { MOCK_TRENDS, MOCK_POSTS } from "@/lib/mock-data";
 import { FireIcon, RefreshIcon } from "@/components/icons";
 import { TrendingTopic, Stats } from "@/lib/types";
 
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+const TWENTY_FOUR_HOURS = 48 * 60 * 60 * 1000;
 
 export default function DashboardPage() {
   const [trends, setTrends] = useState<TrendingTopic[]>(MOCK_TRENDS);
@@ -65,7 +65,7 @@ export default function DashboardPage() {
         </button>
       </div>
       <p className="text-[#888] text-sm mb-1">
-        Last 24 hours \u00B7 {filteredTrends.length} hot AI trends \u00B7{" "}
+        Last 48 hours \u00B7 {filteredTrends.length} hot AI trends \u00B7{" "}
         {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} | Powered by Agile Intelligence
       </p>
       {lastScan && (
