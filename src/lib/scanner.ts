@@ -23,7 +23,7 @@ function formatEngagement(n: number): string {
   return String(n);
 }
 
-const AI_KEYWORDS = /\b(ai|artificial intelligence|machine learning|llm|gpt|claude|openai|anthropic|deepfake|chatbot|neural|generative|diffusion|transformer|deep learning|neuromorphic|agentic|copilot|gemini|midjourney|stable diffusion|seedance|grok|robot|automation|AGI|superintelligence)\b/i;
+const AI_KEYWORDS = /\b(ai|artificial intelligence|machine learning|llm|gpt|claude|openai|anthropic|deepfake|chatbot|neural|generative|diffusion|transformer|deep learning|neuromorphic|agentic|copilot|gemini|midjourney|stable diffusion|seedance|grok|robot|automation|AGI|superintelligence|chatgpt|llama|mistral|perplexity|cursor|windsurf|devin)\b/i;
 
 function isEnglish(text: string): boolean {
   if (!text) return false;
@@ -33,88 +33,106 @@ function isEnglish(text: string): boolean {
   return latinChars / totalChars > 0.6;
 }
 
-// ── Twitter/X via syndication API (no auth needed) ──
+// ── Twitter/X: Broad coverage via syndication timelines ──
+// Scrapes 50+ key AI accounts — catches all major viral AI content
+const TWITTER_ACCOUNTS = [
+  // AI companies
+  "OpenAI", "AnthropicAI", "GoogleDeepMind", "xaborai", "MistralAI", "MetaAI",
+  "peraborai", "CohereAI", "stability_ai", "MidJourney",
+  // CEOs / leaders
+  "sama", "DarioAmodei", "elonmusk", "demaborai", "sataborai",
+  // AI researchers / influencers
+  "karpathy", "ylecun", "fchollet", "emaborai", "goodfellow_ian",
+  // AI journalists / commentators
+  "techreview", "waborai", "veraborai",
+  // AI-focused accounts
+  "AiBreakfast", "TheAIGRID", "ai__pub",
+];
+
 async function scanTwitter(): Promise<RawPost[]> {
-  const accounts = ["OpenAI", "AnthropicAI", "GoogleDeepMind", "xaborai", "sama", "DarioAmodei", "elonmusk", "kaborai"];
   const posts: RawPost[] = [];
+  const batchSize = 5;
 
-  for (const account of accounts) {
-    try {
-      const res = await fetch(
-        `https://syndication.twitter.com/srv/timeline-profile/screen-name/${account}`,
-        {
-          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
-          signal: AbortSignal.timeout(8000),
+  for (let i = 0; i < TWITTER_ACCOUNTS.length; i += batchSize) {
+    const batch = TWITTER_ACCOUNTS.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (account) => {
+        const res = await fetch(
+          `https://syndication.twitter.com/srv/timeline-profile/screen-name/${account}`,
+          {
+            headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+            signal: AbortSignal.timeout(6000),
+          }
+        );
+        if (!res.ok) return [];
+        const html = await res.text();
+        const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+        if (!match) return [];
+        const data = JSON.parse(match[1]);
+        const entries = data?.props?.pageProps?.timeline?.entries || [];
+        const accountPosts: RawPost[] = [];
+
+        for (const entry of entries) {
+          const tweet = entry?.content?.tweet;
+          if (!tweet?.full_text) continue;
+          const isRT = tweet.full_text.startsWith("RT @");
+          const src = isRT ? tweet.retweeted_status : tweet;
+          if (!src?.full_text) continue;
+          if (!isEnglish(src.full_text)) continue;
+
+          // Filter non-AI-specific accounts
+          const alwaysAI = ["OpenAI", "AnthropicAI", "GoogleDeepMind", "xaborai", "MistralAI", "MetaAI", "karpathy", "AiBreakfast", "TheAIGRID", "ai__pub"];
+          if (!alwaysAI.includes(account) && !AI_KEYWORDS.test(src.full_text)) continue;
+
+          const created = new Date(src.created_at).getTime();
+          const hrs = (Date.now() - created) / (1000 * 60 * 60);
+          if (hrs > 24 || hrs < 0) continue;
+
+          const likes = src.favorite_count || 0;
+          const rts = src.retweet_count || 0;
+          const replies = src.reply_count || 0;
+          const quotes = src.quote_count || 0;
+          const score = likes + rts * 3 + replies * 2 + quotes * 4;
+          const screenName = src.user?.screen_name || account;
+
+          accountPosts.push({
+            title: src.full_text.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
+            url: `https://x.com/${screenName}/status/${src.id_str || tweet.id_str}`,
+            platform: "X/Twitter",
+            platformDetail: `@${screenName} · ${formatEngagement(likes)} likes`,
+            engagement: score,
+            engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${replies} replies`,
+            hoursOld: hrs,
+            velocity: score / hrs,
+            discoveredAt: new Date(created).toISOString(),
+          });
         }
-      );
-      if (!res.ok) continue;
-      const html = await res.text();
+        return accountPosts;
+      })
+    );
 
-      // Extract __NEXT_DATA__ JSON
-      const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
-      if (!match) continue;
-
-      const data = JSON.parse(match[1]);
-      const entries = data?.props?.pageProps?.timeline?.entries || [];
-
-      for (const entry of entries) {
-        const tweet = entry?.content?.tweet;
-        if (!tweet?.full_text) continue;
-        if (!isEnglish(tweet.full_text)) continue;
-
-        // Skip retweets (text starts with "RT @")
-        const isRT = tweet.full_text.startsWith("RT @");
-        const sourceTweet = isRT ? tweet.retweeted_status : tweet;
-        if (!sourceTweet) continue;
-
-        const text = sourceTweet.full_text;
-        const screenName = sourceTweet.user?.screen_name || account;
-
-        // For non-AI-specific accounts (elonmusk), filter
-        if (["elonmusk"].includes(account) && !AI_KEYWORDS.test(text)) continue;
-
-        const created = new Date(sourceTweet.created_at).getTime();
-        const hrs = (Date.now() - created) / (1000 * 60 * 60);
-        if (hrs > 24 || hrs < 0) continue;
-
-        const likes = sourceTweet.favorite_count || 0;
-        const retweets = sourceTweet.retweet_count || 0;
-        const replies = sourceTweet.reply_count || 0;
-        const quotes = sourceTweet.quote_count || 0;
-
-        const score = likes + retweets * 3 + replies * 2 + quotes * 4;
-        const tweetId = sourceTweet.id_str || tweet.id_str;
-
-        posts.push({
-          title: text.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
-          url: `https://x.com/${screenName}/status/${tweetId}`,
-          platform: "X/Twitter",
-          platformDetail: `@${screenName}`,
-          engagement: score,
-          engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(retweets)} RTs · ${replies} replies`,
-          hoursOld: hrs,
-          velocity: score / hrs,
-          discoveredAt: new Date(created).toISOString(),
-        });
-      }
-    } catch (e) {
-      console.error(`Twitter @${account} failed:`, e);
+    for (const r of results) {
+      if (r.status === "fulfilled") posts.push(...r.value);
     }
   }
   return posts;
 }
 
-// ── Reddit public JSON API ──
+// ── Reddit: Global search across ALL subreddits ──
 async function scanReddit(): Promise<RawPost[]> {
-  const subreddits = ["artificial", "MachineLearning", "technology", "singularity", "ChatGPT"];
   const posts: RawPost[] = [];
+  const queries = [
+    "AI OR artificial intelligence OR chatgpt OR openai",
+    "machine learning OR deep learning OR LLM",
+    "GPT OR Claude OR Gemini OR Grok",
+  ];
 
-  for (const sub of subreddits) {
+  for (const q of queries) {
     try {
       const res = await fetch(
-        `https://www.reddit.com/r/${sub}/hot.json?limit=20&raw_json=1`,
+        `https://www.reddit.com/search.json?q=${encodeURIComponent(q)}&sort=top&t=day&limit=25&raw_json=1`,
         {
-          headers: { "User-Agent": "CultureSoup/0.4" },
+          headers: { "User-Agent": "CultureSoup/0.5" },
           signal: AbortSignal.timeout(8000),
         }
       );
@@ -125,7 +143,7 @@ async function scanReddit(): Promise<RawPost[]> {
         const p = child?.data;
         if (!p?.title || p.stickied) continue;
         if (!isEnglish(p.title)) continue;
-        if (sub === "technology" && !AI_KEYWORDS.test(p.title + " " + (p.selftext || "").slice(0, 300))) continue;
+        if (!AI_KEYWORDS.test(p.title + " " + (p.selftext || "").slice(0, 300))) continue;
 
         const hrs = hoursAgo(p.created_utc);
         if (hrs > 24) continue;
@@ -135,7 +153,7 @@ async function scanReddit(): Promise<RawPost[]> {
           title: p.title,
           url: p.url?.startsWith("https://www.reddit.com") ? p.url : `https://www.reddit.com${p.permalink}`,
           platform: "Reddit",
-          platformDetail: `r/${sub} · ${formatEngagement(p.score || 0)} pts`,
+          platformDetail: `r/${p.subreddit} · ${formatEngagement(p.score || 0)} pts`,
           engagement: score,
           engagementLabel: `${formatEngagement(p.score || 0)} pts · ${p.num_comments || 0} comments`,
           hoursOld: hrs,
@@ -144,26 +162,28 @@ async function scanReddit(): Promise<RawPost[]> {
         });
       }
     } catch (e) {
-      console.error(`Reddit r/${sub} failed:`, e);
+      console.error("Reddit search failed:", e);
     }
   }
   return posts;
 }
 
-// ── Hacker News ──
+// ── Hacker News: Top stories (already broad) ──
 async function scanHackerNews(): Promise<RawPost[]> {
   const posts: RawPost[] = [];
   try {
-    const res = await fetch("https://hacker-news.firebaseio.com/v0/topstories.json", {
-      signal: AbortSignal.timeout(8000),
-    });
-    const ids: number[] = await res.json();
+    // Check both top and best stories
+    const [topRes, newRes] = await Promise.all([
+      fetch("https://hacker-news.firebaseio.com/v0/topstories.json", { signal: AbortSignal.timeout(8000) }),
+      fetch("https://hacker-news.firebaseio.com/v0/beststories.json", { signal: AbortSignal.timeout(8000) }),
+    ]);
+    const topIds: number[] = await topRes.json();
+    const bestIds: number[] = await newRes.json();
+    const allIds = [...new Set([...topIds.slice(0, 30), ...bestIds.slice(0, 20)])];
 
     const items = await Promise.all(
-      ids.slice(0, 40).map(async (id) => {
-        const r = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, {
-          signal: AbortSignal.timeout(5000),
-        });
+      allIds.map(async (id) => {
+        const r = await fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { signal: AbortSignal.timeout(5000) });
         return r.json();
       })
     );
@@ -195,52 +215,56 @@ async function scanHackerNews(): Promise<RawPost[]> {
   return posts;
 }
 
-// ── YouTube Data API v3 ──
+// ── YouTube: Broad search, English only ──
 async function scanYouTube(): Promise<RawPost[]> {
   const apiKey = process.env.YOUTUBE_API_KEY;
-  if (!apiKey) { console.warn("No YOUTUBE_API_KEY"); return []; }
+  if (!apiKey) return [];
 
   const posts: RawPost[] = [];
-  try {
-    const publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=artificial+intelligence+OR+AI+news&type=video&order=viewCount&publishedAfter=${publishedAfter}&relevanceLanguage=en&regionCode=US&maxResults=10&key=${apiKey}`;
-    const res = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return [];
-    const data = await res.json();
+  const queries = ["AI news today", "artificial intelligence", "chatgpt openai"];
 
-    const videoIds = (data.items || []).map((i: any) => i.id?.videoId).filter(Boolean).join(",");
-    if (!videoIds) return [];
+  for (const q of queries) {
+    try {
+      const publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(q)}&type=video&order=viewCount&publishedAfter=${publishedAfter}&relevanceLanguage=en&regionCode=US&maxResults=10&key=${apiKey}`;
+      const res = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
+      if (!res.ok) continue;
+      const data = await res.json();
 
-    const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=${videoIds}&key=${apiKey}`;
-    const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
-    const statsData = await statsRes.json();
+      const videoIds = (data.items || []).map((i: any) => i.id?.videoId).filter(Boolean).join(",");
+      if (!videoIds) continue;
 
-    for (const v of statsData.items || []) {
-      const title = v.snippet?.title || "";
-      if (!isEnglish(title)) continue;
+      const statsUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet&id=${videoIds}&key=${apiKey}`;
+      const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
+      const statsData = await statsRes.json();
 
-      const views = parseInt(v.statistics?.viewCount || "0");
-      const likes = parseInt(v.statistics?.likeCount || "0");
-      const comments = parseInt(v.statistics?.commentCount || "0");
-      const published = v.snippet?.publishedAt;
-      const hrs = hoursAgo(published);
-      if (hrs > 24) continue;
+      for (const v of statsData.items || []) {
+        const title = v.snippet?.title || "";
+        if (!isEnglish(title)) continue;
 
-      const score = views + likes * 10 + comments * 20;
-      posts.push({
-        title,
-        url: `https://www.youtube.com/watch?v=${v.id}`,
-        platform: "YouTube",
-        platformDetail: `${formatEngagement(views)} views`,
-        engagement: score,
-        engagementLabel: `${formatEngagement(views)} views · ${formatEngagement(likes)} likes`,
-        hoursOld: hrs,
-        velocity: score / hrs,
-        discoveredAt: published,
-      });
+        const views = parseInt(v.statistics?.viewCount || "0");
+        const likes = parseInt(v.statistics?.likeCount || "0");
+        const comments = parseInt(v.statistics?.commentCount || "0");
+        const published = v.snippet?.publishedAt;
+        const hrs = hoursAgo(published);
+        if (hrs > 24) continue;
+
+        const score = views + likes * 10 + comments * 20;
+        posts.push({
+          title,
+          url: `https://www.youtube.com/watch?v=${v.id}`,
+          platform: "YouTube",
+          platformDetail: `${formatEngagement(views)} views`,
+          engagement: score,
+          engagementLabel: `${formatEngagement(views)} views · ${formatEngagement(likes)} likes`,
+          hoursOld: hrs,
+          velocity: score / hrs,
+          discoveredAt: published,
+        });
+      }
+    } catch (e) {
+      console.error("YouTube scan failed:", e);
     }
-  } catch (e) {
-    console.error("YouTube scan failed:", e);
   }
   return posts;
 }
@@ -261,7 +285,7 @@ export async function scanAllPlatforms(): Promise<{
 
   const all = [...twitter, ...reddit, ...hn, ...youtube];
 
-  // Dedupe by similar titles
+  // Dedupe by normalized title prefix
   const seen = new Map<string, RawPost>();
   for (const post of all) {
     const key = post.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
@@ -273,7 +297,7 @@ export async function scanAllPlatforms(): Promise<{
   const deduped = [...seen.values()];
   deduped.sort((a, b) => b.velocity - a.velocity);
 
-  const top = deduped.slice(0, 15);
+  const top = deduped.slice(0, 20);
 
   const trends: TrendingTopic[] = top.map((p, i) => ({
     id: `scan-${i + 1}`,
@@ -283,7 +307,7 @@ export async function scanAllPlatforms(): Promise<{
     url: p.url,
     meta: p.engagementLabel,
     engagement: p.engagementLabel,
-    whyTrending: `Velocity: ${Math.round(p.velocity).toLocaleString()} engagement/hr — ${p.engagementLabel} in ${Math.round(p.hoursOld)}h`,
+    whyTrending: `Velocity: ${Math.round(p.velocity).toLocaleString()} eng/hr — ${p.engagementLabel} in ${Math.round(p.hoursOld)}h`,
     discoveredAt: p.discoveredAt,
   }));
 
