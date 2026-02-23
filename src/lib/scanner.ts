@@ -1,6 +1,7 @@
 import { TrendingTopic } from "./types";
+import { getSupplementPosts } from "./supplement-cache";
 
-interface RawPost {
+export interface RawPost {
   title: string;
   url: string;
   platform: string;
@@ -10,6 +11,7 @@ interface RawPost {
   hoursOld: number;
   velocity: number;
   discoveredAt: string;
+  source?: string;
 }
 
 function hoursAgo(dateStr: string | number): number {
@@ -561,8 +563,14 @@ export async function scanAllPlatforms(): Promise<{
     scanYouTube(),
   ]);
 
-  const all = [...twitter, ...tiktok, ...reddit, ...hn, ...youtube];
-  console.log(`[Scanner] Total raw: ${all.length} (Twitter:${twitter.length} TikTok:${tiktok.length} Reddit:${reddit.length} HN:${hn.length} YT:${youtube.length})`);
+  // Supplement: Bird keyword search + last30days (pushed from Mac Mini feeder)
+  const supplement = getSupplementPosts();
+  if (supplement.length > 0) {
+    console.log(`[Scanner] Supplement: ${supplement.length} posts from feeder`);
+  }
+
+  const all = [...twitter, ...tiktok, ...reddit, ...hn, ...youtube, ...supplement];
+  console.log(`[Scanner] Total raw: ${all.length} (Twitter:${twitter.length} TikTok:${tiktok.length} Reddit:${reddit.length} HN:${hn.length} YT:${youtube.length} Supplement:${supplement.length})`);
 
   // Cross-platform velocity normalization — prevent any single platform from dominating
   const platformScales: Record<string, number> = {
