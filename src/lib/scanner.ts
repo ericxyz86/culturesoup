@@ -194,7 +194,70 @@ async function scanTwitter(): Promise<RawPost[]> {
         if (r.status === "fulfilled") posts.push(...r.value);
       }
     }
-    console.log(`[Scanner] Twitter: ${posts.length} posts from ${TWITTER_ACCOUNTS.length} accounts (TwitterAPI.io)`);
+    // Part 2: Keyword search for AI tweets from ANY account (high engagement)
+    const searchQueries = [
+      '"artificial intelligence" OR "AI agent" OR ChatGPT OR GPT OR Claude OR LLM min_faves:100',
+      'OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI min_faves:200',
+      'Gemini OR Mistral OR Llama OR "generative AI" OR "AI safety" min_faves:100',
+    ];
+    const seenIds = new Set(posts.map(p => p.url));
+
+    for (const q of searchQueries) {
+      try {
+        await new Promise(r => setTimeout(r, 500));
+        const res = await fetch(
+          `https://api.twitterapi.io/twitter/tweet/advanced_search?query=${encodeURIComponent(q)}&queryType=Top`,
+          {
+            headers: { "x-api-key": twitterApiKey },
+            cache: "no-store",
+            signal: AbortSignal.timeout(15000),
+          }
+        );
+        if (!res.ok) continue;
+        const data = await res.json();
+        const tweets = data?.tweets || [];
+
+        for (const t of tweets) {
+          const text = t?.text || "";
+          if (!text || !isEnglish(text)) continue;
+          if (!AI_KEYWORDS.test(text)) continue;
+
+          const created = new Date(t.createdAt).getTime();
+          if (isNaN(created)) continue;
+          const hrs = (Date.now() - created) / (1000 * 60 * 60);
+          if (hrs > MAX_AGE_HOURS || hrs < 0) continue;
+
+          const url = t.url || `https://x.com/${t.author?.userName}/status/${t.id}`;
+          if (seenIds.has(url)) continue;
+          seenIds.add(url);
+
+          const likes = t.likeCount || 0;
+          const rts = t.retweetCount || 0;
+          const replies = t.replyCount || 0;
+          const quotes = t.quoteCount || 0;
+          const views = t.viewCount || 0;
+          const score = likes + rts * 3 + replies * 2 + quotes * 4 + views * 0.01;
+          const screenName = t.author?.userName || "unknown";
+
+          posts.push({
+            title: text.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
+            url,
+            platform: "X/Twitter",
+            platformDetail: `@${screenName} · ${formatEngagement(likes)} likes`,
+            engagement: score,
+            engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${formatEngagement(views)} views`,
+            hoursOld: hrs,
+            velocity: score / hrs,
+            discoveredAt: new Date(created).toISOString(),
+            source: "search",
+          });
+        }
+      } catch (e) {
+        console.error("Twitter search failed:", e);
+      }
+    }
+
+    console.log(`[Scanner] Twitter: ${posts.length} posts from ${TWITTER_ACCOUNTS.length} accounts + keyword search (TwitterAPI.io)`);
   } else {
     // Fallback: syndication API (works from residential IPs only)
     const batchSize = 6;
