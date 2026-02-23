@@ -72,7 +72,7 @@ async function fetchSociaVault(path: string, params: Record<string, string> = {}
     const res = await fetch(url, {
       headers: { "X-App-Name": appName, "X-Monitor-Key": monitorKey },
       cache: "no-store",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error(`SociaVault monitor ${res.status}: ${await res.text().catch(() => "")}`);
     return res.json();
@@ -82,7 +82,7 @@ async function fetchSociaVault(path: string, params: Record<string, string> = {}
     const res = await fetch(url, {
       headers: { "X-API-Key": directKey },
       cache: "no-store",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
     if (!res.ok) throw new Error(`SociaVault direct ${res.status}`);
     return res.json();
@@ -127,8 +127,10 @@ async function scanTwitter(): Promise<RawPost[]> {
 
   if (hasSociaVault) {
     // SociaVault: 100 most popular tweets per user
-    const batchSize = 4; // Be gentle on credits
+    // Batch size 3 + 2s delay between batches to avoid rate-limiting
+    const batchSize = 3;
     for (let i = 0; i < TWITTER_ACCOUNTS.length; i += batchSize) {
+      if (i > 0) await new Promise(r => setTimeout(r, 2000)); // Rate limit spacing
       const batch = TWITTER_ACCOUNTS.slice(i, i + batchSize);
       const results = await Promise.allSettled(
         batch.map(async (account) => {
@@ -263,158 +265,225 @@ async function scanTikTok(): Promise<RawPost[]> {
   }
 
   const posts: RawPost[] = [];
-  const queries = ["artificial intelligence", "AI news", "chatgpt"];
 
+  // Helper to extract TikTok posts from various response shapes
+  function parseTikTokVideos(data: any): any[] {
+    if (!data?.success) return [];
+    const d = data?.data;
+    // search/keyword returns data.search_item_list[].aweme_info
+    if (d?.search_item_list) {
+      let items = d.search_item_list;
+      if (typeof items === "object" && !Array.isArray(items)) items = Object.values(items);
+      return items.map((i: any) => i?.aweme_info || i).filter(Boolean);
+    }
+    // trending & hashtag return data.aweme_list
+    if (d?.aweme_list) {
+      let items = d.aweme_list;
+      if (typeof items === "object" && !Array.isArray(items)) items = Object.values(items);
+      return items;
+    }
+    // profile videos return data.aweme_list too
+    let vids = d?.videos || d || [];
+    if (typeof vids === "object" && !Array.isArray(vids)) vids = Object.values(vids);
+    return vids;
+  }
+
+  function tiktokPostFromVideo(v: any): RawPost | null {
+    const desc = v?.desc || v?.title || "";
+    if (!desc || !isEnglish(desc)) return null;
+
+    const created = v?.createTime || v?.create_time || 0;
+    if (!created) return null;
+    const hrs = hoursAgo(created);
+    if (hrs > MAX_AGE_HOURS) return null;
+
+    const stats = v?.stats || v?.statistics || {};
+    const plays = stats?.playCount || v?.playCount || 0;
+    const likes = stats?.diggCount || v?.diggCount || 0;
+    const comments = stats?.commentCount || v?.commentCount || 0;
+    const shares = stats?.shareCount || v?.shareCount || 0;
+    const score = plays * 0.01 + likes + comments * 5 + shares * 10;
+    const author = v?.author?.uniqueId || v?.author?.unique_id || v?.author?.nickname || "unknown";
+    const videoId = v?.aweme_id || v?.id || v?.video_id || "";
+
+    return {
+      title: desc.slice(0, 200),
+      url: `https://www.tiktok.com/@${author}/video/${videoId}`,
+      platform: "TikTok",
+      platformDetail: `@${author} · ${formatEngagement(plays)} plays`,
+      engagement: score,
+      engagementLabel: `${formatEngagement(plays)} plays · ${formatEngagement(likes)} likes · ${comments} comments`,
+      hoursOld: hrs,
+      velocity: score / hrs,
+      discoveredAt: new Date(created * 1000).toISOString(),
+    };
+  }
+
+  // Keyword search (correct path: /search/keyword, param: query)
+  const queries = ["artificial intelligence", "AI news", "chatgpt"];
   for (const q of queries) {
     try {
-      const data = await fetchSociaVault("/v1/scrape/tiktok/search-keyword", { keyword: q, count: "10" });
-      if (!data?.success) continue;
-      let videos = data?.data?.videos || data?.data || [];
-      if (typeof videos === "object" && !Array.isArray(videos)) {
-        videos = Object.values(videos);
-      }
-
-      for (const v of videos) {
-        const desc = v?.desc || v?.title || "";
-        if (!desc || !isEnglish(desc)) continue;
-
-        const created = v?.createTime || v?.create_time || 0;
-        const hrs = hoursAgo(created);
-        if (hrs > MAX_AGE_HOURS) continue;
-
-        const plays = v?.stats?.playCount || v?.playCount || 0;
-        const likes = v?.stats?.diggCount || v?.diggCount || 0;
-        const comments = v?.stats?.commentCount || v?.commentCount || 0;
-        const shares = v?.stats?.shareCount || v?.shareCount || 0;
-        const score = plays * 0.01 + likes + comments * 5 + shares * 10;
-        const author = v?.author?.uniqueId || v?.author?.nickname || "unknown";
-        const videoId = v?.id || v?.video_id || "";
-
-        posts.push({
-          title: desc.slice(0, 200),
-          url: `https://www.tiktok.com/@${author}/video/${videoId}`,
-          platform: "TikTok",
-          platformDetail: `@${author} · ${formatEngagement(plays)} plays`,
-          engagement: score,
-          engagementLabel: `${formatEngagement(plays)} plays · ${formatEngagement(likes)} likes · ${comments} comments`,
-          hoursOld: hrs,
-          velocity: score / hrs,
-          discoveredAt: new Date(created * 1000).toISOString(),
-        });
+      const data = await fetchSociaVault("/v1/scrape/tiktok/search/keyword", { query: q, count: "10" });
+      for (const v of parseTikTokVideos(data)) {
+        const post = tiktokPostFromVideo(v);
+        if (post) posts.push(post);
       }
     } catch (e) {
       console.error(`TikTok search "${q}" failed:`, e);
     }
   }
 
-  // Also check trending/popular videos for AI content
+  // Hashtag search
+  for (const tag of ["AI", "artificialintelligence"]) {
+    try {
+      const data = await fetchSociaVault("/v1/scrape/tiktok/search/hashtag", { hashtag: tag, count: "10" });
+      for (const v of parseTikTokVideos(data)) {
+        if (!AI_KEYWORDS.test(v?.desc || "")) continue;
+        const post = tiktokPostFromVideo(v);
+        if (post) posts.push(post);
+      }
+    } catch (e) {
+      console.error(`TikTok hashtag "${tag}" failed:`, e);
+    }
+  }
+
+  // Trending feed — filter for AI content
   try {
-    const data = await fetchSociaVault("/v1/scrape/tiktok/popular-videos", { period: "7", country: "us" });
-    if (data?.success) {
-      let videos = data?.data?.videos || data?.data || [];
-      if (typeof videos === "object" && !Array.isArray(videos)) {
-        videos = Object.values(videos);
-      }
-      for (const v of videos) {
-        const desc = v?.desc || v?.title || "";
-        if (!isEnglish(desc) || !AI_KEYWORDS.test(desc)) continue;
-        const created = v?.createTime || v?.create_time || 0;
-        const hrs = hoursAgo(created);
-        if (hrs > MAX_AGE_HOURS) continue;
-
-        const plays = v?.stats?.playCount || v?.playCount || 0;
-        const likes = v?.stats?.diggCount || v?.diggCount || 0;
-        const comments = v?.stats?.commentCount || v?.commentCount || 0;
-        const shares = v?.stats?.shareCount || v?.shareCount || 0;
-        const score = plays * 0.01 + likes + comments * 5 + shares * 10;
-        const author = v?.author?.uniqueId || v?.author?.nickname || "unknown";
-        const videoId = v?.id || "";
-
-        posts.push({
-          title: desc.slice(0, 200),
-          url: `https://www.tiktok.com/@${author}/video/${videoId}`,
-          platform: "TikTok",
-          platformDetail: `@${author} · ${formatEngagement(plays)} plays`,
-          engagement: score,
-          engagementLabel: `${formatEngagement(plays)} plays · ${formatEngagement(likes)} likes`,
-          hoursOld: hrs,
-          velocity: score / hrs,
-          discoveredAt: new Date(created * 1000).toISOString(),
-        });
-      }
+    const data = await fetchSociaVault("/v1/scrape/tiktok/trending", { region: "US" });
+    for (const v of parseTikTokVideos(data)) {
+      if (!AI_KEYWORDS.test(v?.desc || "")) continue;
+      const post = tiktokPostFromVideo(v);
+      if (post) posts.push(post);
     }
   } catch (e) {
-    console.error("TikTok popular failed:", e);
+    console.error("TikTok trending failed:", e);
   }
 
   console.log(`[Scanner] TikTok: ${posts.length} posts`);
   return posts;
 }
 
-// ── Reddit: Hot from AI subreddits + global search ──
+// ── Reddit: SociaVault primary (datacenter IPs get 403 on direct API), direct fallback ──
 async function scanReddit(): Promise<RawPost[]> {
   const posts: RawPost[] = [];
-  const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  const hasSociaVault = !!(process.env.SOCIAVAULT_MONITOR_URL || process.env.SOCIAVAULT_API_KEY);
 
-  // Part 1: Hot posts from AI-specific subreddits
   const aiSubreddits = [
-    // Core AI subs
     "artificial", "MachineLearning", "singularity", "ChatGPT", "OpenAI",
     "LocalLLaMA", "StableDiffusion", "ClaudeAI", "ArtificialInteligence",
-    // Adjacent tech subs that frequently surface AI content
     "technology", "Futurology", "programming", "datascience", "compsci",
   ];
-  for (const sub of aiSubreddits) {
-    try {
-      const res = await fetch(
-        `https://www.reddit.com/r/${sub}/hot.json?limit=15&raw_json=1`,
-        { headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(8000) }
-      );
-      if (!res.ok) continue;
-      const data = await res.json();
-      for (const child of data?.data?.children || []) {
-        const p = child?.data;
-        if (!p?.title || p.stickied) continue;
-        if (!isEnglish(p.title)) continue;
-        const hrs = hoursAgo(p.created_utc);
-        if (hrs > MAX_AGE_HOURS) continue;
-        const score = (p.score || 0) + (p.num_comments || 0) * 2;
-        posts.push({
-          title: p.title,
-          url: `https://www.reddit.com${p.permalink}`,
-          platform: "Reddit",
-          platformDetail: `r/${p.subreddit} · ${formatEngagement(p.score || 0)} pts`,
-          engagement: score,
-          engagementLabel: `${formatEngagement(p.score || 0)} pts · ${p.num_comments || 0} comments`,
-          hoursOld: hrs,
-          velocity: score / hrs,
-          discoveredAt: new Date(p.created_utc * 1000).toISOString(),
-        });
-      }
-    } catch (e) {
-      console.error(`Reddit r/${sub} failed:`, e);
-    }
-  }
 
-  // Part 2: Global search — multiple query sets to cast a wider net
-  const searchQueries = [
-    "chatgpt+OR+openai+OR+%22artificial+intelligence%22+OR+deepfake",
-    "%22AI+regulation%22+OR+%22AI+safety%22+OR+%22AI+job%22+OR+%22AI+replace%22",
-    "LLM+OR+GPT+OR+Claude+OR+Gemini+OR+Llama+OR+Mistral",
-  ];
-  for (const q of searchQueries) {
-    try {
-      const res = await fetch(
-        `https://www.reddit.com/search.json?q=${q}&sort=top&t=day&limit=25&raw_json=1`,
-        { headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(8000) }
+  if (hasSociaVault) {
+    // Primary: SociaVault (works from datacenter IPs, 1 credit per request)
+    // Batch subreddits 3 at a time with delay to avoid rate-limiting
+    const batchSize = 3;
+    for (let i = 0; i < aiSubreddits.length; i += batchSize) {
+      if (i > 0) await new Promise(r => setTimeout(r, 1000));
+      const batch = aiSubreddits.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(async (sub) => {
+          try {
+            const data = await fetchSociaVault("/v1/scrape/reddit/subreddit", { subreddit: sub, sort: "hot", limit: "15" });
+            if (!data?.success) return [];
+            let children = data?.data?.posts || data?.data?.children || data?.data || [];
+            if (typeof children === "object" && !Array.isArray(children)) children = Object.values(children);
+
+            const subPosts: RawPost[] = [];
+            for (const child of children) {
+              const p = child?.data || child;
+              const title = p?.title || "";
+              if (!title || p?.stickied) continue;
+              if (!isEnglish(title)) continue;
+              const created = p?.created_utc || p?.created || p?.createdAt || 0;
+              if (!created) continue;
+              const hrs = hoursAgo(created);
+              if (hrs > MAX_AGE_HOURS) continue;
+              const score = (p.score || p.ups || 0) + (p.num_comments || p.comments || 0) * 2;
+              const subreddit = p.subreddit || p.subreddit_name || sub;
+              const permalink = p.permalink || `/r/${subreddit}/comments/${p.id}`;
+              subPosts.push({
+                title,
+                url: permalink.startsWith("http") ? permalink : `https://www.reddit.com${permalink}`,
+                platform: "Reddit",
+                platformDetail: `r/${subreddit} · ${formatEngagement(p.score || p.ups || 0)} pts`,
+                engagement: score,
+                engagementLabel: `${formatEngagement(p.score || p.ups || 0)} pts · ${p.num_comments || p.comments || 0} comments`,
+                hoursOld: hrs,
+                velocity: score / hrs,
+                discoveredAt: new Date(created * 1000).toISOString(),
+              });
+            }
+            return subPosts;
+          } catch (e) {
+            console.error(`Reddit SV r/${sub} failed:`, e);
+            return [];
+          }
+        })
       );
-      if (res.ok) {
+      for (const r of results) {
+        if (r.status === "fulfilled") posts.push(...r.value);
+      }
+    }
+
+    // Global search via SociaVault
+    const searchQueries = [
+      "artificial intelligence OR chatgpt OR openai",
+      "AI regulation OR AI safety OR AI job",
+      "LLM OR GPT OR Claude OR Gemini",
+    ];
+    for (const q of searchQueries) {
+      try {
+        await new Promise(r => setTimeout(r, 1000));
+        const data = await fetchSociaVault("/v1/scrape/reddit/search", { query: q, limit: "25" });
+        if (!data?.success) continue;
+        let children = data?.data?.posts || data?.data?.children || data?.data || [];
+        if (typeof children === "object" && !Array.isArray(children)) children = Object.values(children);
+
+        for (const child of children) {
+          const p = child?.data || child;
+          const title = p?.title || "";
+          if (!title || p?.stickied) continue;
+          if (!isEnglish(title)) continue;
+          if (!AI_KEYWORDS.test(title + " " + (p.selftext || p.body || "").slice(0, 200))) continue;
+          const created = p?.created_utc || p?.created || 0;
+          if (!created) continue;
+          const hrs = hoursAgo(created);
+          if (hrs > MAX_AGE_HOURS) continue;
+          const score = (p.score || p.ups || 0) + (p.num_comments || p.comments || 0) * 2;
+          const subreddit = p.subreddit || p.subreddit_name || "unknown";
+          const permalink = p.permalink || `/r/${subreddit}/comments/${p.id}`;
+          posts.push({
+            title,
+            url: permalink.startsWith("http") ? permalink : `https://www.reddit.com${permalink}`,
+            platform: "Reddit",
+            platformDetail: `r/${subreddit} · ${formatEngagement(p.score || p.ups || 0)} pts`,
+            engagement: score,
+            engagementLabel: `${formatEngagement(p.score || p.ups || 0)} pts · ${p.num_comments || p.comments || 0} comments`,
+            hoursOld: hrs,
+            velocity: score / hrs,
+            discoveredAt: new Date(created * 1000).toISOString(),
+          });
+        }
+      } catch (e) {
+        console.error("Reddit SV search failed:", e);
+      }
+    }
+  } else {
+    // Fallback: direct Reddit API (works from residential IPs, fails from datacenter)
+    const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+    for (const sub of aiSubreddits) {
+      try {
+        const res = await fetch(
+          `https://www.reddit.com/r/${sub}/hot.json?limit=15&raw_json=1`,
+          { headers: { "User-Agent": UA }, cache: "no-store", signal: AbortSignal.timeout(8000) }
+        );
+        if (!res.ok) { console.error(`Reddit r/${sub}: HTTP ${res.status}`); continue; }
         const data = await res.json();
         for (const child of data?.data?.children || []) {
           const p = child?.data;
           if (!p?.title || p.stickied) continue;
           if (!isEnglish(p.title)) continue;
-          if (!AI_KEYWORDS.test(p.title + " " + (p.selftext || "").slice(0, 200))) continue;
           const hrs = hoursAgo(p.created_utc);
           if (hrs > MAX_AGE_HOURS) continue;
           const score = (p.score || 0) + (p.num_comments || 0) * 2;
@@ -430,13 +499,13 @@ async function scanReddit(): Promise<RawPost[]> {
             discoveredAt: new Date(p.created_utc * 1000).toISOString(),
           });
         }
+      } catch (e) {
+        console.error(`Reddit r/${sub} failed:`, e);
       }
-    } catch (e) {
-      console.error("Reddit global search failed:", e);
     }
   }
 
-  console.log(`[Scanner] Reddit: ${posts.length} posts from ${aiSubreddits.length} subs + global search`);
+  console.log(`[Scanner] Reddit: ${posts.length} posts from ${aiSubreddits.length} subs + search (${hasSociaVault ? "SociaVault" : "direct"})`);
   return posts;
 }
 
