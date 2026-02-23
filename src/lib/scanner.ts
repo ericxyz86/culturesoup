@@ -197,9 +197,10 @@ async function scanTwitter(): Promise<RawPost[]> {
     // Part 2: Keyword search for AI tweets from ANY account (high engagement, last 48h)
     const sinceDate = new Date(Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000).toISOString().split("T")[0];
     const searchQueries = [
-      `("artificial intelligence" OR "AI agent" OR ChatGPT OR Claude OR LLM) min_faves:100 lang:en since:${sinceDate}`,
-      `(OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI) min_faves:100 lang:en since:${sinceDate}`,
-      `(Gemini OR Mistral OR Llama OR "generative AI" OR "AI safety" OR Grok) min_faves:100 lang:en since:${sinceDate}`,
+      // AI industry news and discussion (exclude casual bot usage)
+      `("artificial intelligence" OR "AI agent" OR "AI model" OR "AI safety" OR "AI regulation") min_faves:200 lang:en since:${sinceDate}`,
+      `(OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI OR "foundation model") min_faves:200 lang:en since:${sinceDate}`,
+      `(ChatGPT OR "Claude AI" OR "Claude Code" OR Gemini OR "Llama 4" OR Mistral OR "generative AI" OR LLM) min_faves:200 lang:en since:${sinceDate} -"@grok" -"hey grok" -"@chatgpt"`,
     ];
     const seenIds = new Set(posts.map(p => p.url));
 
@@ -222,6 +223,13 @@ async function scanTwitter(): Promise<RawPost[]> {
           const text = t?.text || "";
           if (!text || !isEnglish(text)) continue;
           if (!AI_KEYWORDS.test(text)) continue;
+
+          // Filter out casual bot interactions ("hey @grok do X", "@chatgpt help me")
+          const lowerText = text.toLowerCase();
+          if (/^(hey |hi |yo )?@(grok|chatgpt|claude|gemini)\b/i.test(text)) continue;
+          if (lowerText.startsWith("@grok ") || lowerText.startsWith("@chatgpt ")) continue;
+          // Filter out image generation requests
+          if (/\b(turn me|make me|draw me|generate|imagine)\b/i.test(lowerText) && text.length < 100) continue;
 
           const created = new Date(t.createdAt).getTime();
           if (isNaN(created)) continue;
