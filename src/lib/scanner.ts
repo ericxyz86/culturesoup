@@ -234,7 +234,7 @@ async function scanTwitter(): Promise<RawPost[]> {
           const created = new Date(t.createdAt).getTime();
           if (isNaN(created)) continue;
           const hrs = (Date.now() - created) / (1000 * 60 * 60);
-          if (hrs > MAX_AGE_HOURS || hrs < 0) continue;
+          if (hrs > MAX_AGE_HOURS || hrs < 0 || isNaN(hrs) || hrs === 0) continue;
 
           const url = t.url || `https://x.com/${t.author?.userName}/status/${t.id}`;
           if (seenIds.has(url)) continue;
@@ -256,7 +256,7 @@ async function scanTwitter(): Promise<RawPost[]> {
             engagement: score,
             engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${formatEngagement(views)} views`,
             hoursOld: hrs,
-            velocity: score / hrs,
+            velocity: hrs > 0 ? score / hrs : 0,
             discoveredAt: new Date(created).toISOString(),
             source: "search",
           });
