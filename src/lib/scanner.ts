@@ -194,11 +194,12 @@ async function scanTwitter(): Promise<RawPost[]> {
         if (r.status === "fulfilled") posts.push(...r.value);
       }
     }
-    // Part 2: Keyword search for AI tweets from ANY account (high engagement)
+    // Part 2: Keyword search for AI tweets from ANY account (high engagement, last 48h)
+    const sinceDate = new Date(Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000).toISOString().split("T")[0];
     const searchQueries = [
-      '"artificial intelligence" OR "AI agent" OR ChatGPT OR GPT OR Claude OR LLM min_faves:100',
-      'OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI min_faves:200',
-      'Gemini OR Mistral OR Llama OR "generative AI" OR "AI safety" min_faves:100',
+      `("artificial intelligence" OR "AI agent" OR ChatGPT OR Claude OR LLM) min_faves:100 lang:en since:${sinceDate}`,
+      `(OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI) min_faves:100 lang:en since:${sinceDate}`,
+      `(Gemini OR Mistral OR Llama OR "generative AI" OR "AI safety" OR Grok) min_faves:100 lang:en since:${sinceDate}`,
     ];
     const seenIds = new Set(posts.map(p => p.url));
 
