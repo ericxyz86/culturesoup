@@ -123,75 +123,145 @@ const ALWAYS_AI_ACCOUNTS = new Set([
 
 async function scanTwitter(): Promise<RawPost[]> {
   const posts: RawPost[] = [];
+  const twitterApiKey = process.env.TWITTERAPI_IO_KEY;
 
-  // Primary: syndication API (gives chronological/recent tweets, no auth)
-  // SociaVault user-tweets returns 100 ALL-TIME popular tweets (often >1 year old)
-  // which never pass the 48h recency filter. Syndication is better for trend detection.
-  const batchSize = 6;
-  for (let i = 0; i < TWITTER_ACCOUNTS.length; i += batchSize) {
-    const batch = TWITTER_ACCOUNTS.slice(i, i + batchSize);
-    const results = await Promise.allSettled(
-      batch.map(async (account) => {
-        try {
-          const res = await fetch(
-            `https://syndication.twitter.com/srv/timeline-profile/screen-name/${account}`,
-            {
-              headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
-              cache: "no-store",
-              signal: AbortSignal.timeout(10000),
+  if (twitterApiKey) {
+    // Primary: TwitterAPI.io — returns chronological recent tweets ($0.15/1K tweets)
+    // Much better than SociaVault (all-time popular) or syndication (blocked from datacenter IPs)
+    const batchSize = 5;
+    for (let i = 0; i < TWITTER_ACCOUNTS.length; i += batchSize) {
+      if (i > 0) await new Promise(r => setTimeout(r, 500)); // Gentle rate limiting
+      const batch = TWITTER_ACCOUNTS.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(async (account) => {
+          try {
+            const res = await fetch(
+              `https://api.twitterapi.io/twitter/user/last_tweets?userName=${account}`,
+              {
+                headers: { "x-api-key": twitterApiKey },
+                cache: "no-store",
+                signal: AbortSignal.timeout(15000),
+              }
+            );
+            if (!res.ok) return [];
+            const data = await res.json();
+            const tweets = data?.data?.tweets || [];
+            const accountPosts: RawPost[] = [];
+
+            for (const t of tweets) {
+              const text = t?.text || "";
+              if (!text || !isEnglish(text)) continue;
+
+              // Handle RTs: use retweeted_tweet data if available
+              const isRT = text.startsWith("RT @");
+              const src = isRT && t?.retweeted_tweet ? t.retweeted_tweet : t;
+              const srcText = src?.text || text;
+              if (!ALWAYS_AI_ACCOUNTS.has(account) && !AI_KEYWORDS.test(srcText)) continue;
+
+              const created = new Date(src.createdAt || t.createdAt).getTime();
+              if (isNaN(created)) continue;
+              const hrs = (Date.now() - created) / (1000 * 60 * 60);
+              if (hrs > MAX_AGE_HOURS || hrs < 0) continue;
+
+              const likes = src.likeCount || t.likeCount || 0;
+              const rts = src.retweetCount || t.retweetCount || 0;
+              const replies = src.replyCount || t.replyCount || 0;
+              const quotes = src.quoteCount || t.quoteCount || 0;
+              const views = src.viewCount || t.viewCount || 0;
+              const score = likes + rts * 3 + replies * 2 + quotes * 4 + views * 0.01;
+              const screenName = src.author?.userName || t.author?.userName || account;
+
+              accountPosts.push({
+                title: srcText.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
+                url: src.url || t.url || `https://x.com/${screenName}/status/${src.id || t.id}`,
+                platform: "X/Twitter",
+                platformDetail: `@${screenName} · ${formatEngagement(likes)} likes`,
+                engagement: score,
+                engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${formatEngagement(views)} views`,
+                hoursOld: hrs,
+                velocity: score / hrs,
+                discoveredAt: new Date(created).toISOString(),
+              });
             }
-          );
-          if (!res.ok) return [];
-          const html = await res.text();
-          const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-          if (!match) return [];
-          const data = JSON.parse(match[1]);
-          const entries = data?.props?.pageProps?.timeline?.entries || [];
-          const accountPosts: RawPost[] = [];
-
-          for (const entry of entries) {
-            const tweet = entry?.content?.tweet;
-            if (!tweet?.full_text) continue;
-            const isRT = tweet.full_text.startsWith("RT @");
-            const src = isRT ? tweet.retweeted_status : tweet;
-            if (!src?.full_text || !isEnglish(src.full_text)) continue;
-            if (!ALWAYS_AI_ACCOUNTS.has(account) && !AI_KEYWORDS.test(src.full_text)) continue;
-
-            const created = new Date(src.created_at).getTime();
-            const hrs = (Date.now() - created) / (1000 * 60 * 60);
-            if (hrs > MAX_AGE_HOURS || hrs < 0) continue;
-
-            const likes = src.favorite_count || 0;
-            const rts = src.retweet_count || 0;
-            const replies = src.reply_count || 0;
-            const quotes = src.quote_count || 0;
-            const score = likes + rts * 3 + replies * 2 + quotes * 4;
-            const screenName = src.user?.screen_name || account;
-
-            accountPosts.push({
-              title: src.full_text.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
-              url: `https://x.com/${screenName}/status/${src.id_str || tweet.id_str}`,
-              platform: "X/Twitter",
-              platformDetail: `@${screenName} · ${formatEngagement(likes)} likes`,
-              engagement: score,
-              engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${replies} replies`,
-              hoursOld: hrs,
-              velocity: score / hrs,
-              discoveredAt: new Date(created).toISOString(),
-            });
+            return accountPosts;
+          } catch (e) {
+            console.error(`Twitter @${account} failed:`, e);
+            return [];
           }
-          return accountPosts;
-        } catch {
-          return [];
-        }
-      })
-    );
-    for (const r of results) {
-      if (r.status === "fulfilled") posts.push(...r.value);
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") posts.push(...r.value);
+      }
     }
-  }
+    console.log(`[Scanner] Twitter: ${posts.length} posts from ${TWITTER_ACCOUNTS.length} accounts (TwitterAPI.io)`);
+  } else {
+    // Fallback: syndication API (works from residential IPs only)
+    const batchSize = 6;
+    for (let i = 0; i < TWITTER_ACCOUNTS.length; i += batchSize) {
+      const batch = TWITTER_ACCOUNTS.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(async (account) => {
+          try {
+            const res = await fetch(
+              `https://syndication.twitter.com/srv/timeline-profile/screen-name/${account}`,
+              {
+                headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" },
+                cache: "no-store",
+                signal: AbortSignal.timeout(10000),
+              }
+            );
+            if (!res.ok) return [];
+            const html = await res.text();
+            const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            if (!match) return [];
+            const data = JSON.parse(match[1]);
+            const entries = data?.props?.pageProps?.timeline?.entries || [];
+            const accountPosts: RawPost[] = [];
 
-  console.log(`[Scanner] Twitter: ${posts.length} posts from ${TWITTER_ACCOUNTS.length} accounts (syndication)`);
+            for (const entry of entries) {
+              const tweet = entry?.content?.tweet;
+              if (!tweet?.full_text) continue;
+              const isRT = tweet.full_text.startsWith("RT @");
+              const src = isRT ? tweet.retweeted_status : tweet;
+              if (!src?.full_text || !isEnglish(src.full_text)) continue;
+              if (!ALWAYS_AI_ACCOUNTS.has(account) && !AI_KEYWORDS.test(src.full_text)) continue;
+
+              const created = new Date(src.created_at).getTime();
+              const hrs = (Date.now() - created) / (1000 * 60 * 60);
+              if (hrs > MAX_AGE_HOURS || hrs < 0) continue;
+
+              const likes = src.favorite_count || 0;
+              const rts = src.retweet_count || 0;
+              const replies = src.reply_count || 0;
+              const quotes = src.quote_count || 0;
+              const score = likes + rts * 3 + replies * 2 + quotes * 4;
+              const screenName = src.user?.screen_name || account;
+
+              accountPosts.push({
+                title: src.full_text.replace(/https:\/\/t\.co\/\S+/g, "").trim().slice(0, 200),
+                url: `https://x.com/${screenName}/status/${src.id_str || tweet.id_str}`,
+                platform: "X/Twitter",
+                platformDetail: `@${screenName} · ${formatEngagement(likes)} likes`,
+                engagement: score,
+                engagementLabel: `${formatEngagement(likes)} likes · ${formatEngagement(rts)} RTs · ${replies} replies`,
+                hoursOld: hrs,
+                velocity: score / hrs,
+                discoveredAt: new Date(created).toISOString(),
+              });
+            }
+            return accountPosts;
+          } catch {
+            return [];
+          }
+        })
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") posts.push(...r.value);
+      }
+    }
+    console.log(`[Scanner] Twitter: ${posts.length} posts from ${TWITTER_ACCOUNTS.length} accounts (syndication)`);
+  }
   return posts;
 }
 
