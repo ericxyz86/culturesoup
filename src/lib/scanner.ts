@@ -197,10 +197,10 @@ async function scanTwitter(): Promise<RawPost[]> {
     // Part 2: Keyword search for AI tweets from ANY account (high engagement, last 48h)
     const sinceDate = new Date(Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000).toISOString().split("T")[0];
     const searchQueries = [
-      // AI industry news and discussion (exclude casual bot usage)
-      `("artificial intelligence" OR "AI agent" OR "AI model" OR "AI safety" OR "AI regulation") min_faves:200 lang:en since:${sinceDate}`,
-      `(OpenAI OR Anthropic OR "deep learning" OR "machine learning" OR AGI OR "foundation model") min_faves:200 lang:en since:${sinceDate}`,
-      `(ChatGPT OR "Claude AI" OR "Claude Code" OR Gemini OR "Llama 4" OR Mistral OR "generative AI" OR LLM) min_faves:200 lang:en since:${sinceDate} -"@grok" -"hey grok" -"@chatgpt"`,
+      // Keep queries simple — too many operators breaks TwitterAPI.io search
+      `"artificial intelligence" OR "AI agent" OR "AI safety" min_faves:100 lang:en since:${sinceDate}`,
+      `OpenAI OR Anthropic OR "machine learning" OR AGI min_faves:100 lang:en since:${sinceDate}`,
+      `ChatGPT OR "Claude AI" OR LLM OR "generative AI" min_faves:100 lang:en since:${sinceDate}`,
     ];
     const seenIds = new Set(posts.map(p => p.url));
 
