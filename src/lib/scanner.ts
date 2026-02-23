@@ -762,3 +762,4 @@ export async function scanAllPlatforms(): Promise<{
   const sources = [...new Set(all.map((p) => p.platform))];
   return { trends, scannedAt: new Date().toISOString(), sources, rawCount: all.length };
 }
+// Build bump: 1771834583
