@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
           try {
             content = await generateWithLLM(title, why, url, platform);
           } catch (e) {
-            console.error(`LLM generation failed for ${platform}:`, e);
+            console.error("LLM generation failed", { platform, error: e });
             content = generateFallbackContent(title, why, platform);
           }
         } else {
